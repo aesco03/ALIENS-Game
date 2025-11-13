@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Co-op Adventure</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Space Co-op Adventure</h1>
+        <p>Work together to navigate the spaceship and battle aliens!</p>
+    </header>
+    
+    <div class="game-container">
+        <canvas id="game-board" width="800" height="600"></canvas>
+        
+        <div class="controls">
+            <div class="player-info">
+                <div id="player1" class="player">
+                    <div class="player-color"></div>
+                    <span>Player 1</span>
+                </div>
+                <div id="player2" class="player">
+                    <div class="player-color"></div>
+                    <span>Player 2</span>
+                </div>
+            </div>
+            
+            <div class="dice-container">
+                <button id="roll-dice">Roll Dice</button>
+                <div id="dice-result">-</div>
+                <div>Moves left: <span id="moves-left">0</span></div>
+            </div>
+            
+            <div class="movement-controls">
+                <button id="move-up" disabled>↑</button>
+                <div>
+                    <button id="move-left" disabled>←</button>
+                    <button id="move-right" disabled>→</button>
+                </div>
+                <button id="move-down" disabled>↓</button>
+            </div>
+            
+            <div class="game-log" id="game-log">
+                <div class="log-entry">Welcome to Space Co-op Adventure! Roll the dice to begin.</div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>How to Play:</h3>
+            <p>1. Roll the dice to determine how many spaces you can move</p>
+            <p>2. Use the arrow buttons to move both players together</p>
+            <p>3. When you land on a red square, you'll encounter an alien</p>
+            <p>4. Work together to defeat the aliens and complete your mission!</p>
+        </div>
+    </div>
+    
+    <div id="alien-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Alien Encounter!</h2>
+            <img src="images/alien-encounter.jpg" alt="Alien" class="alien-image">
+            <p>A hostile alien blocks your path! Work together to defeat it.</p>
+            <button id="battle-alien">Battle Alien</button>
+        </div>
+    </div>
+
+    <script src="js/game.js"></script>
+</body>
+</html>
