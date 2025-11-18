@@ -2,70 +2,547 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Space Co-op Adventure</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>AGHHH ALIENS!!!</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #7cfc00; /* Alien Green Border */
+            background-color: black;
+            box-shadow: 0 0 20px rgba(124, 252, 0, 0.2);
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Space Co-op Adventure</h1>
-        <p>Work together to navigate the spaceship and battle aliens!</p>
-    </header>
-    
-    <div class="game-container">
-        <canvas id="game-board" width="800" height="600"></canvas>
-        
-        <div class="controls">
-            <div class="player-info">
-                <div id="player1" class="player">
-                    <div class="player-color"></div>
-                    <span>Player 1</span>
-                </div>
-                <div id="player2" class="player">
-                    <div class="player-color"></div>
-                    <span>Player 2</span>
-                </div>
-            </div>
-            
-            <div class="dice-container">
-                <button id="roll-dice">Roll Dice</button>
-                <div id="dice-result">-</div>
-                <div>Moves left: <span id="moves-left">0</span></div>
-            </div>
-            
-            <div class="movement-controls">
-                <button id="move-up" disabled>↑</button>
-                <div>
-                    <button id="move-left" disabled>←</button>
-                    <button id="move-right" disabled>→</button>
-                </div>
-                <button id="move-down" disabled>↓</button>
-            </div>
-            
-            <div class="game-log" id="game-log">
-                <div class="log-entry">Welcome to Space Co-op Adventure! Roll the dice to begin.</div>
-            </div>
-        </div>
-        
-        <div class="instructions">
-            <h3>How to Play:</h3>
-            <p>1. Roll the dice to determine how many spaces you can move</p>
-            <p>2. Use the arrow buttons to move both players together</p>
-            <p>3. When you land on a red square, you'll encounter an alien</p>
-            <p>4. Work together to defeat the aliens and complete your mission!</p>
-        </div>
-    </div>
-    
-    <div id="alien-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <h2>Alien Encounter!</h2>
-            <img src="images/alien-encounter.jpg" alt="Alien" class="alien-image">
-            <p>A hostile alien blocks your path! Work together to defeat it.</p>
-            <button id="battle-alien">Battle Alien</button>
-        </div>
-    </div>
 
-    <script src="js/game.js"></script>
+<canvas id="gameCanvas" width="1000" height="750"></canvas>
+
+<script>
+/**
+ * AGHHH ALIENS!!! - Web Version
+ * Feature: Full Combat System (RPG Style)
+ */
+
+// --- Constants ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const COLORS = {
+    BLACK: "#000000",
+    WHITE: "#FFFFFF",
+    GRAY: "#808080",
+    DARK_GRAY: "#323232",
+    ALIEN_GREEN: "#7cfc00",
+    RED: "#C80000",
+    BLUE: "#0000C8",
+    SQUAD_COLOR: "#00FFFF", 
+    ASSAULT: "#FF6464",
+    SENTINEL: "#6464FF",
+    SPECIALIST: "#64FF64",
+    HP_BAR: "#D32F2F",
+    SP_BAR: "#388E3C"
+};
+
+// --- Game State Variables ---
+let gameState = "main_menu"; 
+let helpPageIndex = 0;
+
+// Player Setup
+let p1Class = null;
+let p2Class = null;
+let currentTurn = 0; // 0 for P1, 1 for P2 (Board Turn)
+let partyPosition = 0; 
+
+// Combat Stats (Persistent)
+let players = [
+    { hp: 75, maxHp: 75, sp: 5, maxSp: 10, shield: 0, class: "" }, // P1
+    { hp: 75, maxHp: 75, sp: 5, maxSp: 10, shield: 0, class: "" }  // P2
+];
+
+// Game Board Logic
+let boardTiles = []; 
+let gameLog = ["Game Start! Player 1's turn."];
+let dieRollResult = 0;
+
+// Combat Instance Variables
+let combatEnemy = null;
+let combatPhase = "start"; // start, player_turn, enemy_turn, victory, rest
+let combatLog = [];
+
+// --- Data: Enemies & Skills ---
+
+const ENEMIES = [
+    { name: "Xenomorph", hp: 80, maxHp: 80, atk: 10 },
+    { name: "Wraith", hp: 90, maxHp: 90, atk: 10 },
+    { name: "Kraken", hp: 100, maxHp: 100, atk: 10 },
+    { name: "Goliath", hp: 120, maxHp: 120, atk: 10 }
+];
+
+const QUEEN = { name: "Alien Queen", hp: 200, maxHp: 200, atk: 20 };
+
+// Skill Data: cost = SP Cost, dmg = Damage, type = effect type
+const SKILLS = {
+    "Assault": [
+        { name: "Strike", cost: 1, dmg: 20, desc: "Deal 20 Dmg" },
+        { name: "Slash", cost: 2, dmg: 30, desc: "Self 10 Dmg, Deal 30" },
+        { name: "Concussive", cost: 3, dmg: 15, desc: "Stun Dmg" },
+        { name: "Charged", cost: 6, dmg: 50, desc: "Massive Dmg" }
+    ],
+    "Sentinel": [
+        { name: "Defend", cost: 1, dmg: 0, desc: "Reflect Dmg" },
+        { name: "Shield", cost: 2, dmg: 0, desc: "Gain 25 Shield" },
+        { name: "Cover", cost: 3, dmg: 0, desc: "+10 Shield Team" },
+        { name: "Slam", cost: 5, dmg: 45, desc: "Remove Shield, Deal 45" }
+    ],
+    "Specialist": [
+        { name: "Debuff", cost: 1, dmg: 10, desc: "Reduce Enemy Atk" },
+        { name: "Buff", cost: 1, dmg: 0, desc: "Ally Atk Up" },
+        { name: "Freeze", cost: 1, dmg: 0, desc: "Stun Enemy" },
+        { name: "Heal", cost: 1, dmg: 0, desc: "Heal Ally 15 HP" }
+    ]
+};
+
+const HELP_PAGES = [
+    ["--- AGHHH ALIENS! ---", "", "Rules: Cooperative RPG.", "Use your class skills to defeat aliens.", "Manage your HP and SP carefully."],
+    ["--- Classes ---", "Assault: Damage Dealer", "Sentinel: Tank/Shields", "Specialist: Healer/Buffer"]
+];
+
+const CLASS_INFO = {
+    "Assault": ["Damage Dealer", "Strike (1SP)", "Slash (2SP)", "Concussive (3SP)", "Charged (6SP)"],
+    "Sentinel": ["Tank", "Defend (1SP)", "Shield (2SP)", "Cover (3SP)", "Slam (5SP)"],
+    "Specialist": ["Support", "Debuff (1SP)", "Buff (1SP)", "Freeze (1SP)", "Heal (1SP)"]
+};
+
+// --- Initialization ---
+
+function init() {
+    createBoardTiles();
+    requestAnimationFrame(gameLoop);
+}
+
+function createBoardTiles() {
+    let tiles = [];
+    let size = 32; 
+    let margin = 5;
+    let x = 40;    
+    let y = 580;   
+
+    const addTiles = (count, dx, dy) => {
+        for(let i=0; i<count; i++) {
+            tiles.push({x: x, y: y, w: size, h: size});
+            x += dx * (size + margin);
+            y += dy * (size + margin);
+        }
+        x -= dx * (size + margin);
+        y -= dy * (size + margin);
+    };
+
+    // Path
+    addTiles(15, 1, 0); // Right
+    addTiles(5, 0, -1); // Up
+    addTiles(10, -1, 0); // Left
+    addTiles(5, 0, -1); // Up
+    addTiles(15, 1, 0); // Right
+    addTiles(5, 0, -1); // Up
+    addTiles(13, -1, 0); // Left
+    boardTiles = tiles;
+}
+
+// --- Combat Logic Helpers ---
+
+function startCombat(tileIndex) {
+    // 1. Check if Rest Point (Every 11th tile, except start)
+    if ((tileIndex + 1) % 11 === 0 && tileIndex !== 0) {
+        combatPhase = "rest";
+        // Heal Players
+        players[0].hp = players[0].maxHp;
+        players[1].hp = players[1].maxHp;
+        combatLog = ["Rest Point reached!", "Both players fully healed."];
+        return;
+    }
+
+    // 2. Spawn Enemy
+    if (tileIndex === 67) {
+        // Deep copy Queen
+        combatEnemy = { ...QUEEN };
+    } else {
+        // Random regular enemy
+        let rand = Math.floor(Math.random() * ENEMIES.length);
+        combatEnemy = { ...ENEMIES[rand] };
+    }
+
+    // 3. Init Phase
+    combatPhase = "player_turn";
+    combatLog = [`A wild ${combatEnemy.name} appeared!`];
+    
+    // Regain SP at start of encounter logic (optional, rules say start of turn)
+    players[currentTurn].sp = Math.min(players[currentTurn].sp + 2, players[currentTurn].maxSp);
+    combatLog.push(`Player ${currentTurn+1} regains 2 SP.`);
+}
+
+function playerUseSkill(skillIndex) {
+    let p = players[currentTurn];
+    let skill = SKILLS[p.class][skillIndex];
+
+    // Check Cost
+    if (p.sp < skill.cost) {
+        combatLog.push("Not enough SP!");
+        return;
+    }
+
+    // Pay Cost
+    p.sp -= skill.cost;
+
+    // Execute Skill Effect
+    // (Simplified logic for the demo: mostly damage or heal)
+    let dmgDealt = 0;
+
+    if (skill.name === "Heal") {
+        let allyIdx = 1 - currentTurn;
+        players[allyIdx].hp = Math.min(players[allyIdx].hp + 15, players[allyIdx].maxHp);
+        combatLog.push(`Healed Player ${allyIdx+1} for 15 HP.`);
+    } else if (skill.name === "Shield") {
+        p.shield += 25;
+        combatLog.push(`Gained 25 Shield.`);
+    } else if (skill.name === "Slash") {
+        p.hp -= 10;
+        dmgDealt = 30;
+        combatLog.push(`Sacrificed 10 HP to deal 30 Dmg!`);
+    } else {
+        // Standard Damage
+        dmgDealt = skill.dmg;
+    }
+
+    if (dmgDealt > 0) {
+        combatEnemy.hp -= dmgDealt;
+        combatLog.push(`Used ${skill.name}! Dealt ${dmgDealt} damage.`);
+    }
+
+    // Check Victory
+    if (combatEnemy.hp <= 0) {
+        combatEnemy.hp = 0;
+        combatPhase = "victory";
+        combatLog.push(`${combatEnemy.name} defeated!`);
+    } else {
+        // Enemy Turn Trigger
+        setTimeout(enemyTurn, 1000); // Small delay for pacing
+        combatPhase = "enemy_turn"; 
+    }
+}
+
+function enemyTurn() {
+    if (combatPhase !== "enemy_turn") return;
+
+    // 1. Roll Attack Type (1-3 Basic, 4-5 Heavy, 6 Special)
+    let roll = Math.floor(Math.random() * 6) + 1;
+    let dmg = combatEnemy.atk;
+    let moveName = "Basic Attack";
+
+    if (roll >= 4 && roll <= 5) {
+        dmg += 15;
+        moveName = "Heavy Attack";
+    } else if (roll === 6) {
+        dmg += 35;
+        moveName = "Special Attack";
+    }
+
+    // 2. Roll Target (1-3 P1, 4-6 P2)
+    let targetRoll = Math.floor(Math.random() * 6) + 1;
+    let targetIdx = (targetRoll <= 3) ? 0 : 1;
+    
+    // 3. Apply Damage
+    let target = players[targetIdx];
+    
+    // Handle Shield Logic
+    if (target.shield > 0) {
+        if (target.shield >= dmg) {
+            target.shield -= dmg;
+            dmg = 0;
+            combatLog.push(`${combatEnemy.name} used ${moveName}. Blocked by Shield!`);
+        } else {
+            dmg -= target.shield;
+            target.shield = 0;
+        }
+    }
+
+    if (dmg > 0) {
+        target.hp -= dmg;
+        combatLog.push(`${combatEnemy.name} used ${moveName} on P${targetIdx+1} for ${dmg} dmg.`);
+    }
+
+    // 4. Check Defeat
+    if (target.hp <= 0) {
+        target.hp = 0;
+        combatLog.push(`Player ${targetIdx+1} is down!`);
+        // Note: For this demo, game continues until victory or both dead.
+    }
+
+    // 5. Pass Turn back to Player
+    // Logic: In this simple version, it stays the SAME player's board turn until they win.
+    // But let's let players swap in combat? 
+    // Rule: "Players begin with 5 SP and regain 2 every time their turn begins."
+    // Let's swap combat turns between players to make it co-op.
+    
+    currentTurn = 1 - currentTurn; // Swap active player
+    players[currentTurn].sp = Math.min(players[currentTurn].sp + 2, players[currentTurn].maxSp);
+    combatPhase = "player_turn";
+}
+
+
+// --- Input Handling ---
+
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    handleClicks(mouseX, mouseY);
+});
+
+function isInside(x, y, btn) {
+    return x > btn.x && x < btn.x + btn.w && y > btn.y && y < btn.y + btn.h;
+}
+
+// Button Layout
+const BTN = {
+    START: {x: 350, y: 250, w: 300, h: 60},
+    HELP: {x: 350, y: 330, w: 300, h: 60},
+    SETTINGS: {x: 350, y: 410, w: 300, h: 60},
+    ABOUT: {x: 350, y: 490, w: 300, h: 60},
+    BACK: {x: 20, y: 20, w: 150, h: 50},
+    NEXT: {x: 550, y: 680, w: 200, h: 50},
+    PREV: {x: 250, y: 680, w: 200, h: 50},
+    CLASS_1: {x: 50, y: 150, w: 280, h: 500},
+    CLASS_2: {x: 360, y: 150, w: 280, h: 500},
+    CLASS_3: {x: 670, y: 150, w: 280, h: 500},
+    
+    // Board Buttons
+    ROLL: {x: 400, y: 660, w: 200, h: 60}, 
+    
+    // Combat Buttons (4 Skills)
+    SKILL_1: {x: 50, y: 650, w: 200, h: 50},
+    SKILL_2: {x: 280, y: 650, w: 200, h: 50},
+    SKILL_3: {x: 510, y: 650, w: 200, h: 50},
+    SKILL_4: {x: 740, y: 650, w: 200, h: 50},
+    COMBAT_END: {x: 350, y: 600, w: 300, h: 60} // For Victory/Rest
+};
+
+function handleClicks(x, y) {
+    
+    // --- Main Menu ---
+    if (gameState === "main_menu") {
+        if (isInside(x, y, BTN.START)) {
+            gameState = "class_select";
+            p1Class = null; p2Class = null; 
+            partyPosition = 0; currentTurn = 0;
+            gameLog = ["Game Start! Player 1's turn."];
+            // Reset Players
+            players.forEach(p => { p.hp = p.maxHp; p.sp = 5; p.shield = 0; });
+        }
+        else if (isInside(x, y, BTN.HELP)) { gameState = "help"; helpPageIndex = 0; }
+    }
+    else if (["help", "settings", "about", "class_select"].includes(gameState)) {
+        if (isInside(x, y, BTN.BACK)) { gameState = "main_menu"; return; }
+    }
+
+    // --- Help ---
+    if (gameState === "help") {
+        if (isInside(x, y, BTN.NEXT) && helpPageIndex < HELP_PAGES.length - 1) helpPageIndex++;
+        else if (isInside(x, y, BTN.PREV) && helpPageIndex > 0) helpPageIndex--;
+    }
+
+    // --- Class Select ---
+    else if (gameState === "class_select") {
+        let selected = null;
+        if (isInside(x, y, BTN.CLASS_1)) selected = "Assault";
+        else if (isInside(x, y, BTN.CLASS_2)) selected = "Sentinel";
+        else if (isInside(x, y, BTN.CLASS_3)) selected = "Specialist";
+
+        if (selected) {
+            if (!p1Class) { p1Class = selected; players[0].class = selected; }
+            else if (!p2Class && selected !== p1Class) {
+                p2Class = selected; players[1].class = selected;
+                gameState = "game_board";
+            }
+        }
+    }
+
+    // --- Game Board ---
+    else if (gameState === "game_board") {
+        if (isInside(x, y, BTN.ROLL)) {
+            let roll = Math.floor(Math.random() * 6) + 1;
+            dieRollResult = roll;
+            
+            let newPos = partyPosition + roll;
+            if (newPos > 67) newPos = 67;
+            
+            partyPosition = newPos;
+            gameLog.push(`Squad moved to Tile ${newPos+1}.`);
+            
+            // Start Combat
+            gameState = "combat";
+            startCombat(newPos);
+        }
+    }
+
+    // --- Combat ---
+    else if (gameState === "combat") {
+        // Victory or Rest State
+        if (combatPhase === "victory" || combatPhase === "rest") {
+            if (isInside(x, y, BTN.COMBAT_END)) {
+                gameState = "game_board";
+                // Switch board turn logic (who rolls next)
+                // currentTurn is already swapped inside combat loop, so we keep it
+            }
+        }
+        // Active Battle State
+        else if (combatPhase === "player_turn") {
+            if (isInside(x, y, BTN.SKILL_1)) playerUseSkill(0);
+            else if (isInside(x, y, BTN.SKILL_2)) playerUseSkill(1);
+            else if (isInside(x, y, BTN.SKILL_3)) playerUseSkill(2);
+            else if (isInside(x, y, BTN.SKILL_4)) playerUseSkill(3);
+        }
+    }
+}
+
+// --- Drawing ---
+
+function drawRect(rect, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+}
+
+function drawText(text, x, y, size, color, align="center") {
+    ctx.fillStyle = color;
+    ctx.font = `${size}px Arial`;
+    ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+}
+
+function drawButton(btn, text, color, subtext="") {
+    drawRect(btn, color);
+    drawText(text, btn.x + btn.w/2, btn.y + btn.h/2 + 5, 24, COLORS.WHITE);
+    if (subtext) drawText(subtext, btn.x + btn.w/2, btn.y + btn.h/2 + 20, 12, COLORS.WHITE);
+}
+
+function gameLoop() {
+    // Clear
+    ctx.fillStyle = COLORS.BLACK;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === "main_menu") {
+        drawText("AGHHH ALIENS!!!", 500, 150, 72, COLORS.ALIEN_GREEN);
+        drawButton(BTN.START, "Start Game", COLORS.DARK_GRAY);
+        drawButton(BTN.HELP, "Help / Rules", COLORS.DARK_GRAY);
+    } 
+    else if (gameState === "help") {
+        drawButton(BTN.BACK, "< Back", COLORS.DARK_GRAY);
+        let lines = HELP_PAGES[helpPageIndex];
+        lines.forEach((line, i) => drawText(line, 500, 200 + (i*40), 24, COLORS.WHITE));
+        drawButton(BTN.NEXT, "Next", COLORS.DARK_GRAY);
+    }
+    else if (gameState === "class_select") {
+        drawButton(BTN.BACK, "< Back", COLORS.DARK_GRAY);
+        let title = p1Class ? "Player 2: Choose Class" : "Player 1: Choose Class";
+        drawText(title, 500, 100, 50, COLORS.WHITE);
+
+        const drawCard = (btn, name, color, alreadyTaken) => {
+            drawRect(btn, alreadyTaken ? COLORS.DARK_GRAY : color);
+            drawText(name, btn.x + btn.w/2, btn.y + 60, 40, COLORS.BLACK);
+            if (alreadyTaken) drawText("TAKEN", btn.x + btn.w/2, btn.y + 250, 50, COLORS.RED);
+            else {
+                let skills = CLASS_INFO[name];
+                skills.forEach((line, i) => drawText(line, btn.x + btn.w/2, btn.y + 150 + (i*30), 18, COLORS.BLACK));
+            }
+        };
+        drawCard(BTN.CLASS_1, "Assault", COLORS.ASSAULT, p1Class === "Assault");
+        drawCard(BTN.CLASS_2, "Sentinel", COLORS.SENTINEL, p1Class === "Sentinel");
+        drawCard(BTN.CLASS_3, "Specialist", COLORS.SPECIALIST, p1Class === "Specialist");
+    }
+    else if (gameState === "game_board") {
+        // Draw Board
+        boardTiles.forEach((t, i) => {
+            let color = ((i+1) % 11 === 0 && i !== 0) ? COLORS.BLUE : COLORS.RED;
+            drawRect(t, color);
+            drawText(i+1, t.x + t.w/2, t.y + t.h/2 + 5, 10, COLORS.WHITE);
+        });
+
+        // Draw Squad
+        let squad = boardTiles[partyPosition];
+        ctx.beginPath(); ctx.arc(squad.x+16, squad.y+16, 12, 0, 2*Math.PI); 
+        ctx.fillStyle = COLORS.SQUAD_COLOR; ctx.fill();
+
+        // UI Bar
+        ctx.fillStyle = COLORS.DARK_GRAY;
+        ctx.fillRect(0, 630, 1000, 120); 
+        drawText(`Player ${currentTurn + 1}'s Turn`, 150, 670, 30, COLORS.ALIEN_GREEN);
+        drawButton(BTN.ROLL, "Roll Die", COLORS.ALIEN_GREEN);
+        // Log
+        ctx.textAlign = "left"; ctx.fillStyle = COLORS.WHITE; ctx.font = "14px Arial";
+        gameLog.slice(-4).forEach((l, i) => ctx.fillText(l, 650, 660 + (i*20)));
+    }
+    else if (gameState === "combat") {
+        // --- Combat Screen ---
+        
+        // 1. Draw Enemy
+        if (combatPhase !== "rest") {
+            drawText(combatEnemy.name, 500, 100, 40, COLORS.RED);
+            drawText(`HP: ${combatEnemy.hp}/${combatEnemy.maxHp}`, 500, 150, 30, COLORS.WHITE);
+            // Enemy HP Bar
+            let hpPercent = Math.max(0, combatEnemy.hp / combatEnemy.maxHp);
+            ctx.fillStyle = COLORS.GRAY; ctx.fillRect(300, 170, 400, 20);
+            ctx.fillStyle = COLORS.RED; ctx.fillRect(300, 170, 400 * hpPercent, 20);
+        } else {
+            drawText("REST POINT", 500, 150, 50, COLORS.BLUE);
+        }
+
+        // 2. Draw Combat Log (Center)
+        ctx.textAlign = "center"; ctx.font = "20px Arial"; ctx.fillStyle = COLORS.WHITE;
+        combatLog.slice(-5).forEach((l, i) => ctx.fillText(l, 500, 300 + (i*30)));
+
+        // 3. Draw Player Stats (Left P1, Right P2)
+        const drawStats = (p, x, label) => {
+            let color = (label === `Player ${currentTurn+1}`) ? COLORS.ALIEN_GREEN : COLORS.WHITE;
+            drawText(label + ` (${p.class})`, x, 500, 24, color);
+            drawText(`HP: ${p.hp}/${p.maxHp}`, x, 530, 20, COLORS.HP_BAR);
+            drawText(`SP: ${p.sp}/${p.maxSp}`, x, 560, 20, COLORS.SP_BAR);
+            if(p.shield > 0) drawText(`Shield: ${p.shield}`, x, 590, 20, COLORS.BLUE);
+        };
+        drawStats(players[0], 200, "Player 1");
+        drawStats(players[1], 800, "Player 2");
+
+        // 4. Draw Controls
+        if (combatPhase === "player_turn") {
+            let p = players[currentTurn];
+            let skills = SKILLS[p.class];
+            
+            drawButton(BTN.SKILL_1, skills[0].name, COLORS.DARK_GRAY, `${skills[0].cost} SP`);
+            drawButton(BTN.SKILL_2, skills[1].name, COLORS.DARK_GRAY, `${skills[1].cost} SP`);
+            drawButton(BTN.SKILL_3, skills[2].name, COLORS.DARK_GRAY, `${skills[2].cost} SP`);
+            drawButton(BTN.SKILL_4, skills[3].name, COLORS.DARK_GRAY, `${skills[3].cost} SP`);
+            
+            drawText(`It is Player ${currentTurn+1}'s turn! Choose a skill.`, 500, 620, 20, COLORS.ALIEN_GREEN);
+        } 
+        else if (combatPhase === "victory" || combatPhase === "rest") {
+            drawButton(BTN.COMBAT_END, "Continue Journey", COLORS.ALIEN_GREEN);
+        }
+        else if (combatPhase === "enemy_turn") {
+            drawText("Alien is attacking...", 500, 650, 30, COLORS.RED);
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+init();
+
+</script>
 </body>
 </html>
