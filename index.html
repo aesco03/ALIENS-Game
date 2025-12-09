@@ -28,7 +28,7 @@
 <script>
 /**
  * AGHHH ALIENS!!! - Web Version
- * Feature: Full Combat System (RPG Style)
+ * Fixed: Roll Button Logic
  */
 
 // --- Constants ---
@@ -43,6 +43,8 @@ const COLORS = {
     ALIEN_GREEN: "#7cfc00",
     RED: "#C80000",
     BLUE: "#0000C8",
+    SAFE_GREEN: "#008000",
+    GOLD: "#FFD700",
     SQUAD_COLOR: "#00FFFF", 
     ASSAULT: "#FF6464",
     SENTINEL: "#6464FF",
@@ -59,11 +61,9 @@ let helpPageIndex = 0;
 let p1Class = null;
 let p2Class = null;
 let currentTurn = 0; // 0 for P1, 1 for P2 (Board Turn)
-// [MODIFIED] Replaced separate p1/p2 positions with single Squad Position
 let partyPosition = 0; 
 
 // Combat Stats (Persistent)
-// [MODIFIED] Expanded Player Object for RPG Stats (HP, SP, Items, Status Effects)
 let players = [
     { hp: 75, maxHp: 75, sp: 5, maxSp: 10, shield: 0, class: "", 
     lastMove: null, concussiveStreak: 0, isCharging: false, atkBuff: 0, isDefending: false, 
@@ -79,13 +79,11 @@ let gameLog = ["Game Start! Player 1's turn."];
 let dieRollResult = 0;
 
 // Combat Instance Variables
-// [NEW] Combat Specific State Variables
 let combatEnemy = null;
 let combatPhase = "start"; // start, player_turn, enemy_turn, victory, rest, loot_roll, game_over
 let combatLog = [];
 
 // --- Data: Enemies & Skills ---
-// [NEW] Enemy Data Base
 const ENEMIES = [
     { name: "Xenomorph", hp: 80, maxHp: 80, atk: 10, isStunned: false, atkdebuff: 0},
     { name: "Wraith", hp: 90, maxHp: 90, atk: 10, isStunned: false, atkdebuff: 0},
@@ -95,8 +93,16 @@ const ENEMIES = [
 
 const QUEEN = { name: "Alien Queen", hp: 200, maxHp: 200, atk: 20, isStunned: false, atkdebuff: 0 };
 
-// Skill Data: cost = SP Cost, dmg = Damage, type = effect type
-// [NEW] Skill Data for Combat Logic
+// --- Shortcut Data ---
+const SHORTCUTS = {
+    10: { target: 35, enemy: "Goliath", name: "Ventilation Shaft" }, 
+    40: { target: 58, enemy: "Wraith", name: "Teleport Bay" }
+};
+
+let shortcutActive = null;
+let isShortcutFight = false;
+
+// Skill Data
 const SKILLS = {
     "Assault": [
         { name: "Strike", cost: 1, dmg: 20, desc: "Deal 20 Dmg" },
@@ -118,16 +124,13 @@ const SKILLS = {
     ]
 };
 
-// [NEW] Loot System Definitions
-
-// Pool 1: General Loot (Universal - Good for anyone)
+// Loot System
 const GENERAL_ITEMS = [
     { id: "gen_hp", name: "Vitality Chip", desc: "Passive: +15 Max HP" },
     { id: "gen_sp", name: "Energy Cell", desc: "Passive: +2 Max SP" },
     { id: "gen_atk", name: "Combat Visor", desc: "Passive: +5 Base Damage" }
 ];
 
-// Pool 2: Class Exclusive Loot (Specific to the class playing)
 const CLASS_ITEMS = {
     "Assault": [
         { id: "as_burn", name: "Incendiary Module", desc: "High cost attacks apply Burn" },
@@ -145,119 +148,15 @@ const CLASS_ITEMS = {
 let lootTurn = 0;
 
 const HELP_PAGES = [
-    // Page 1: Title & Abstract
-    [
-        "--- AGHHH ALIENS! ---",
-        "",
-        "Abstract:",
-        "Two space cadets had their spaceship invaded by aliens.",
-        "Their goal is to get to the opposite end of their ship",
-        "where the alien queen resides so they can gain control",
-        "of the ship again.",
-        "",
-        "Players: Two-Player cooperative game",
-    ],
-    // Page 2: Core Rules
-    [
-        "--- Core Rules ---",
-        "",
-        "Roll a six-sided die to move across a board of 68 tiles.",
-        "Every time a die is rolled, an enemy encounter begins.",
-        "A random enemy card is chosen, and players must fight.",
-        "",
-        "After an enemy is defeated, each player rolls a die for an item:",
-        "  1-3: No item",
-        "  4-6: Get item",
-        "",
-        "Reach the 68th tile for the final encounter with the Alien Queen.",
-        "Defeat her to win the game.",
-    ],
-    // Page 3: Player Resources
-    [
-        "--- Player Resources ---",
-        "",
-        "Health Points (HP): 75 Total (Red Tokens)",
-        "  When it runs out, the player dies.",
-        "",
-        "Armor Points (AP): (Blue Tokens)",
-        "  Additional health given by abilities.",
-        "",
-        "Skill Points (SP): Start with 5, Max 10.",
-        "  Attacks cost SP. Regain 2 SP at the start of your turn.",
-    ],
-    // Page 4: Rest Points & Alien Resources
-    [
-        "--- Rest & Aliens ---",
-        "",
-        "Rest Points:",
-        "  Every 11 tiles. Both players regain all health.",
-        "  Revives a downed teammate with 50% health.",
-        "  Every 2 rests, aliens get 50% more health.",
-        "",
-        "Alien Resources:",
-        "  Health Points (HP): When it runs out, the alien dies.",
-        "  Enemy Moves (Dice Roll):",
-        "    1-3: Basic Attack",
-        "    4-5: Heavy Attack",
-        "    6: Special Attack",
-        "  (Another roll determines which player is attacked)",
-    ],
-    // Page 5: Class - Assault
-    [
-        "--- Class: Assault (Damage) ---",
-        "",
-        "Strike (1 SP): Deal 20 damage.",
-        "Barbaric Slash (2 SP): Take 10 damage, Deal 30 damage.",
-        "Concussive Strike (3 SP): Deal 7 damage. +3 damage",
-        "  if used consecutively. Stuns after 9 damage increase.",
-        "Charged Punch (6 SP): Skips turn. Next cast deals 50 damage.",
-    ],
-    // Page 6: Class - Sentinel
-    [
-        "--- Class: Sentinel (Defense) ---",
-        "",
-        "Defend (1 SP): Absorb teammate's damage, reflect 50%.",
-        "Shield (2 SP): Gain 25 shield.",
-        "Cover (3 SP): Give 10 shield to the team.",
-        "Slam (5 SP): Removes all shield, deals 45 damage,",
-        "  and removes stun from all enemies.",
-    ],
-    // Page 7: Class - Specialist
-    [
-        "--- Class: Specialist (Support) ---",
-        "",
-        "Debuff (1 SP): Deal 10 damage, reduce enemy attack by 10.",
-        "Buff (1 SP): Increase ally attack by 15.",
-        "Freeze (1 SP): Stun an enemy for 1 turn.",
-        "Heal (1 SP): Heal an ally by 15 HP.",
-    ],
-    // Page 8: Alien Types
-    [
-        "--- Alien Types (Base HP) ---",
-        "",
-        "Goliath (120 HP):",
-        "  Basic: -10, Heavy: -25, Special: -45 Fire Breath",
-        "Kraken (100 HP):",
-        "  Basic: -10, Heavy: -25, Special: -45 Lightning Strike",
-        "Wraith (90 HP):",
-        "  Basic: -10, Heavy: -25, Special: -45 Teleport Abduct",
-        "Xenomorph (80 HP):",
-        "  Basic: -10, Heavy: -25, Special: -45 Acid Bleed",
-        "Alien Queen (200 HP):",
-        "  Basic: -20, Heavy: -35, Special: -60 Group Attack",
-        "  (Summons Xenomorph after 3 attacks)",
-    ],
-    // Page 9: Items
-    [
-        "--- Items (Level up on duplicate) ---",
-        "",
-    ]
+    ["--- AGHHH ALIENS! ---", "", "Rules: Cooperative RPG.", "Use your class skills to defeat aliens.", "Manage your HP and SP carefully."],
+    ["--- Classes ---", "Assault: Damage Dealer", "Sentinel: Tank/Shields", "Specialist: Healer/Buffer"],
+    ["--- Board ---", "Red: Combat", "Green: Safe Zone", "Blue: Rest (Heal)", "Gold: Shortcut (Risk Boss Fight)"]
 ];
 
 const CLASS_INFO = {
-    "Assault": ["Damage Dealer", "Strike (1SP): 20 dmg", "Slash (2SP): Self dmg, high enemy dmg", "Concussive (3SP)", "Charged (6SP)"],
-    "Sentinel": ["Tank", "Defend (1SP): Absorb/Reflect dmg", "Shield (2SP): Gain Shield", "Cover (3SP): Shield Ally", "Slam (5SP): Dmg based on shield"],
-    "Specialist": ["Support", "Debuff (1SP): Reduce enemy atk", "Buff (1SP): Increase ally's atk", "Freeze (1SP): Stun enemy", "Heal (1SP): Restore ally's HP"]
+    "Assault": ["Damage Dealer", "Strike (1SP)", "Slash (2SP)", "Concussive (3SP)", "Charged (6SP)"],
+    "Sentinel": ["Tank", "Defend (1SP)", "Shield (2SP)", "Cover (3SP)", "Slam (5SP)"],
+    "Specialist": ["Support", "Debuff (1SP)", "Buff (1SP)", "Freeze (1SP)", "Heal (1SP)"]
 };
 
 // --- Initialization ---
@@ -266,7 +165,7 @@ function init() {
     createBoardTiles();
     requestAnimationFrame(gameLoop);
 }
-// [MODIFIED] Adjusted Tile Size (32) and Start Position (580) to fit Bottom UI
+
 function createBoardTiles() {
     let tiles = [];
     let size = 32; 
@@ -276,7 +175,14 @@ function createBoardTiles() {
 
     const addTiles = (count, dx, dy) => {
         for(let i=0; i<count; i++) {
-            tiles.push({x: x, y: y, w: size, h: size});
+            let tileType = "red"; // Default
+
+            if ((tiles.length + 1) % 11 === 0) tileType = "blue";
+            else if ((tiles.length + 1) % 3 === 0) tileType = "green";
+            if (SHORTCUTS[tiles.length]) tileType = "gold";
+
+            tiles.push({x: x, y: y, w: size, h: size, type: tileType});
+            
             x += dx * (size + margin);
             y += dy * (size + margin);
         }
@@ -284,408 +190,247 @@ function createBoardTiles() {
         y -= dy * (size + margin);
     };
 
-    // Path
-    addTiles(15, 1, 0); // Right
-    addTiles(5, 0, -1); // Up
-    addTiles(10, -1, 0); // Left
-    addTiles(5, 0, -1); // Up
-    addTiles(15, 1, 0); // Right
-    addTiles(5, 0, -1); // Up
-    addTiles(13, -1, 0); // Left
+    addTiles(15, 1, 0);  
+    addTiles(5, 0, -1);  
+    addTiles(10, -1, 0); 
+    addTiles(5, 0, -1);  
+    addTiles(15, 1, 0);  
+    addTiles(5, 0, -1);  
+    addTiles(13, -1, 0); 
+    
+    if(tiles.length > 0) tiles[tiles.length-1].type = "red";
     boardTiles = tiles;
 }
 
-// --- Combat Logic Helpers ---
+// --- Logic ---
 
-// [NEW] Function to initialize a fight or rest point
 function startCombat(tileIndex) {
-    // 1. Check if Rest Point (Every 11th tile, except start)
-    if ((tileIndex + 1) % 11 === 0 && tileIndex !== 0) {
-        combatPhase = "rest";
-        // Heal Players
-        players[0].hp = players[0].maxHp;
-        players[1].hp = players[1].maxHp;
-        combatLog = ["Rest Point reached!", "Both players fully healed."];
+    let currentTile = boardTiles[tileIndex];
+
+    if (currentTile.type === "green") {
+        combatPhase = "safe";
+        combatLog = ["Safe Zone!", "No aliens here."];
         return;
     }
-
-    // 2. Spawn Enemy
-    if (tileIndex === 67) {
-        // Deep copy Queen
-        combatEnemy = { ...QUEEN }; //Boss
-    } else {
-        // Random regular enemy
-        let rand = Math.floor(Math.random() * ENEMIES.length);
-        combatEnemy = { ...ENEMIES[rand] }; //Random mob
+    if (currentTile.type === "blue") {
+        combatPhase = "rest";
+        players[0].hp = players[0].maxHp;
+        players[1].hp = players[1].maxHp;
+        combatLog = ["Rest Point reached!", "Full Heal!"];
+        return;
+    }
+    if (currentTile.type === "gold") {
+        gameLog.push("Shortcut Entrance.");
+        return; 
     }
 
-    // 3. Init Phase
+    if (tileIndex === 67) {
+        combatEnemy = { ...QUEEN };
+    } else {
+        let rand = Math.floor(Math.random() * ENEMIES.length);
+        combatEnemy = { ...ENEMIES[rand] };
+    }
+
+    isShortcutFight = false;
     combatPhase = "player_turn";
     combatLog = [`A wild ${combatEnemy.name} appeared!`];
-    
-    // Regain SP at start of encounter logic (optional, rules say start of turn)
     players[currentTurn].sp = Math.min(players[currentTurn].sp + 2, players[currentTurn].maxSp);
     combatLog.push(`Player ${currentTurn+1} regains 2 SP.`);
 }
 
-// [NEW] Core RPG Calculation Logic
 function playerUseSkill(skillIndex) {
     let p = players[currentTurn];
-    let ally = players[1 - currentTurn]; // The other player
+    let ally = players[1 - currentTurn]; 
     let skill = SKILLS[p.class][skillIndex];
 
-
-    // 1. Check Cost
-    // 0. Determine the ACTUAL cost for this specific moment
     let actualCost = skill.cost;
-    
-    // If we are currently charging and clicking "Charged" again, 
-    // the second click (the unleash) should be FREE.
-    if (p.isCharging && skill.name === "Charged") {
-        actualCost = 0;
-    }
+    if (p.isCharging && skill.name === "Charged") actualCost = 0;
 
-    // 2. Check Affordability
-    if (p.sp < actualCost) {
-        combatLog.push("Not enough SP!");
-        return;
-    }
+    if (p.sp < actualCost) { combatLog.push("Not enough SP!"); return; }
+    if (p.isCharging && skill.name !== "Charged") { combatLog.push("Must use Charged Punch!"); return; }
 
-    // 3. Check Charging Lock
-    // If charging, you MUST use Charged Punch again to unleash it.
-    if (p.isCharging && skill.name !== "Charged") {
-        combatLog.push("You are charging! You must use Charged Punch!");
-        return;
-    }
-
-    // 4. Pay the Cost
     p.sp -= actualCost;
 
-    // --- SKILL LOGIC ---
     let dmg = 0;
     let selfDmg = 0;
 
-    // --- ASSAULT CLASS ---
-    if (skill.name === "Strike") {
-        dmg = 20;
-    } 
-    else if (skill.name === "Slash") {
-        selfDmg = 10;
-        dmg = 30;
-    } 
+    if (skill.name === "Strike") dmg = 20;
+    else if (skill.name === "Slash") { selfDmg = 10; dmg = 30; }
     else if (skill.name === "Concussive") {
-        // LOGIC YOU ASKED FOR:
-        if (p.lastMove === "Concussive") {
-            p.concussiveStreak++; // Increase streak
-        } else {
-            p.concussiveStreak = 0; // Reset if you broke the chain
-        }
-        
+        if (p.lastMove === "Concussive") p.concussiveStreak++; else p.concussiveStreak = 0;
         let bonus = p.concussiveStreak * 3;
         dmg = 7 + bonus;
-        
-        combatLog.push(`Streak: ${p.concussiveStreak} (Bonus +${bonus})`);
-
-        // Stun if damage increase is 9 (Streak of 3: 3, 6, 9)
-        if (bonus >= 9) {
-            combatEnemy.isStunned = true;
-            combatLog.push("CONCUSSIVE BLOW! Enemy Stunned!");
-            p.concussiveStreak = 0; // Optional: Reset streak after stun
-        }
-    } 
+        combatLog.push(`Streak: ${p.concussiveStreak} (+${bonus})`);
+        if (bonus >= 9) { combatEnemy.isStunned = true; combatLog.push("Enemy Stunned!"); p.concussiveStreak = 0; }
+    }
     else if (skill.name === "Charged") {
         if (!p.isCharging) {
             p.isCharging = true;
-            combatLog.push("Charging power... (Turn Skipped)");
-            // Skip damage, end turn immediately
-            endPlayerTurn(p, skill.name); 
-            return;
+            combatLog.push("Charging... (Turn Skipped)");
+            endPlayerTurn(p, skill.name); return;
         } else {
-            // Unleash
-            dmg = 50;
-            p.isCharging = false;
+            dmg = 50; p.isCharging = false;
             combatLog.push("UNLEASHED CHARGED PUNCH!");
         }
     }
+    else if (skill.name === "Defend") { p.isDefending = true; combatLog.push("Reflecting next attack."); }
+    else if (skill.name === "Shield") { p.shield += 25; combatLog.push("Gained 25 Shield."); }
+    else if (skill.name === "Cover") { p.shield += 10; ally.shield += 10; combatLog.push("Shielded Team."); }
+    else if (skill.name === "Slam") { p.shield = 0; dmg = 45; combatLog.push("Slammed!"); }
+    else if (skill.name === "Debuff") { dmg = 10; combatEnemy.atkDebuff = (combatEnemy.atkDebuff || 0) + 10; combatLog.push("Enemy Atk reduced!"); }
+    else if (skill.name === "Buff") { ally.atkBuff += 15; combatLog.push("Ally Attack Up!"); }
+    else if (skill.name === "Freeze") { combatEnemy.isStunned = true; combatLog.push("Enemy Frozen!"); }
+    else if (skill.name === "Heal") { ally.hp = Math.min(ally.hp + 15, ally.maxHp); combatLog.push("Healed Ally."); }
 
-    // --- SENTINEL CLASS ---
-    else if (skill.name === "Defend") {
-        // Logic handled in Enemy Turn (Reflect)
-        p.isDefending = true; 
-        combatLog.push("Stance: Reflecting 50% damage next turn.");
-    } 
-    else if (skill.name === "Shield") {
-        p.shield += 25;
-        combatLog.push("Gained 25 Shield.");
-    } 
-    else if (skill.name === "Cover") {
-        p.shield += 10;
-        ally.shield += 10;
-        combatLog.push("Granted 10 Shield to Team.");
-    } 
-    else if (skill.name === "Slam") {
-        // Remove all shield, deal 45 dmg
-        p.shield = 0;
-        dmg = 45;
-        // Remove enemy stun? (Rules said "removes stun to all enemies")
-        // Assuming this means it clears their stun status (which is actually bad for players?)
-        // Or maybe it means "Applies Stun"? I'll assume it keeps them stunned or does raw damage.
-        combatLog.push("Shields converted to SLAM!");
-    }
-
-    // --- SPECIALIST CLASS ---
-    else if (skill.name === "Debuff") {
-        dmg = 10;
-        combatEnemy.atkDebuff = (combatEnemy.atkDebuff || 0) + 10;
-        combatLog.push("Enemy Attack reduced by 10!");
-    } 
-    else if (skill.name === "Buff") {
-        ally.atkBuff += 15;
-        combatLog.push(`Player ${2 - currentTurn} gained +15 Attack!`);
-    } 
-    else if (skill.name === "Freeze") {
-        combatEnemy.isStunned = true;
-        combatLog.push("Enemy Frozen (Stunned)!");
-    } 
-    else if (skill.name === "Heal") {
-        ally.hp = Math.min(ally.hp + 15, ally.maxHp);
-        combatLog.push(`Healed Ally for 15 HP.`);
-    }
-
-    // --- APPLY DAMAGE ---
-    
-    // Apply Self Damage (Barbaric Slash)
-    if (selfDmg > 0) {
-        p.hp -= selfDmg;
-        combatLog.push(`Took ${selfDmg} recoil damage.`);
-    }
-
-    // Apply Damage to Enemy
+    if (selfDmg > 0) { p.hp -= selfDmg; combatLog.push(`Recoil: ${selfDmg} dmg.`); }
     if (dmg > 0) {
-        // 1. Apply Buffs
-        dmg += p.atkBuff; 
-        
-        // 2. Apply Item Bonuses (NEW)
-        if (p.items["gen_atk"]) {
-            // +5 damage per level of the item
-            dmg += (5 * p.items["gen_atk"]);
-        }
-        
-        // 3. Deal Damage
+        dmg += p.atkBuff;
+        if (p.items["gen_atk"]) dmg += (5 * p.items["gen_atk"]);
         combatEnemy.hp -= dmg;
-        combatLog.push(`Used ${skill.name}! Dealt ${dmg} damage.`);
-        
-        // Reset Buffs
+        combatLog.push(`Dealt ${dmg} damage.`);
         if (p.atkBuff > 0) p.atkBuff = 0; 
     }
 
-    // Update Tracking
     endPlayerTurn(p, skill.name);
 }
 
-// [NEW] Logic to handle end of turn and Victory checks
 function endPlayerTurn(player, skillName) {
-    // Save the move for next turn (for Concussive logic)
     player.lastMove = skillName;
-
     if (combatEnemy.hp <= 0) {
         combatEnemy.hp = 0;
-// [MODIFIED] Trigger Loot Phase instead of instant victory
+        
+        if (isShortcutFight && shortcutActive !== null) {
+            let s = SHORTCUTS[shortcutActive];
+            partyPosition = s.target;
+            shortcutActive = null;
+            isShortcutFight = false;
+            combatLog = ["Guardian Defeated!", "Taking Shortcut!", "P1 Roll Loot!"];
+        } else {
+            combatLog = [`Enemy Defeated!`, `Player 1, roll for loot!`];
+        }
+
         combatPhase = "loot_roll";
-        lootTurn = 0; // Player 1 rolls first
-        combatLog = [`Enemy Defeated!`, `Player 1, roll for loot!`];
+        lootTurn = 0; 
     } else {
         setTimeout(enemyTurn, 1000);
         combatPhase = "enemy_turn"; 
     }
 }
 
-// [NEW] Loot RNG System (Pool 1 vs Pool 2)
 function processLoot() {
-    // 1. Roll Die (1-6)
     let roll = Math.floor(Math.random() * 6) + 1;
     let p = players[lootTurn];
     let logMsg = `Player ${lootTurn+1} rolled a ${roll}. `;
     let itemData = null;
 
-    // 2. Determine Pool based on Roll
-    
-    // ROLL 1-4: General Pool (Universal)
     if (roll <= 4) {
         let idx = Math.floor(Math.random() * GENERAL_ITEMS.length);
         itemData = GENERAL_ITEMS[idx];
-        logMsg += "(General Loot) ";
-    } 
-    // ROLL 5-6: Unique Pool (Class Specific)
-    else {
-        // Look up the specific list for this player's class
+        logMsg += "(General) ";
+    } else {
         let pool = CLASS_ITEMS[p.class];
         let idx = Math.floor(Math.random() * pool.length);
         itemData = pool[idx];
-        logMsg += `(Unique ${p.class} Loot) `;
+        logMsg += `(${p.class}) `;
     }
 
-    // 3. Add Item to Inventory
     if (p.items[itemData.id]) {
-        // Duplicate Logic: Level Up
         p.items[itemData.id]++; 
-        logMsg += `Found duplicate ${itemData.name}! Level ${p.items[itemData.id]}!`;
-        
-        // Apply "Level Up" stats immediately for General Items
-        if (itemData.id === "gen_hp") { p.maxHp += 5; p.hp += 5; } // Example scaling
+        logMsg += `Duplicate ${itemData.name}! Level Up!`;
+        if (itemData.id === "gen_hp") { p.maxHp += 5; p.hp += 5; }
         if (itemData.id === "gen_sp") { p.maxSp += 1; p.sp += 1; }
     } else {
-        // New Item Logic
         p.items[itemData.id] = 1;
         logMsg += `Obtained ${itemData.name}!`;
-        
-        // Apply "On Pickup" stats immediately
         if (itemData.id === "gen_hp") { p.maxHp += 15; p.hp += 15; }
         if (itemData.id === "gen_sp") { p.maxSp += 2; p.sp += 2; }
     }
     
     combatLog.push(logMsg);
 
-    // 4. Advance Loot Turn
     if (lootTurn === 0) {
-        lootTurn = 1; // Now P2's turn
+        lootTurn = 1; 
         combatLog.push("Player 2, roll for loot!");
     } else {
-        // Both done, go to Victory screen
         combatPhase = "victory";
     }
 }
 
-// [NEW] AI Logic
 function enemyTurn() {
     if (combatPhase !== "enemy_turn") return;
-
-    // 1. CHECK STUN
+    
     if (combatEnemy.isStunned) {
-        combatLog.push(`${combatEnemy.name} is STUNNED and skips turn!`);
-        combatEnemy.isStunned = false; // Remove stun after skipping
-        
-        // Pass turn back
+        combatLog.push("Enemy is Stunned!");
+        combatEnemy.isStunned = false;
         passTurnToPlayer();
         return;
     }
 
-    // 2. Roll Attack & Target
     let roll = Math.floor(Math.random() * 6) + 1;
-    let baseDmg = combatEnemy.atk - (combatEnemy.atkDebuff || 0); // Apply Debuff
-    if (baseDmg < 0) baseDmg = 0; // Can't do negative damage
+    let dmg = Math.max(0, combatEnemy.atk - (combatEnemy.atkDebuff || 0));
+    let move = "Basic";
 
-    let dmg = baseDmg;
-    let moveName = "Basic Attack";
-
-    if (roll >= 4 && roll <= 5) {
-        dmg = baseDmg + 15;
-        moveName = "Heavy Attack";
-    } else if (roll === 6) {
-        dmg = baseDmg + 35;
-        moveName = "Special Attack";
-    }
+    if (roll >= 4 && roll <= 5) { dmg += 15; move = "Heavy"; }
+    else if (roll === 6) { dmg += 35; move = "Special"; }
 
     let targetIdx = (Math.floor(Math.random() * 6) + 1 <= 3) ? 0 : 1;
     let target = players[targetIdx];
-    let ally = players[1 - targetIdx]; // The teammate
+    let ally = players[1 - targetIdx];
 
-    // 3. CHECK SENTINEL DEFEND (Reflect)
-    // If the teammate is the Sentinel and is Defending, they take the hit instead.
-    if (ally.isDefending && ally.class === "Sentinel") {
-        combatLog.push(`Sentinel jumps in to DEFEND!`);
-        target = ally; // Swap target to Sentinel
-    }
+    if (ally.isDefending && ally.class === "Sentinel") { target = ally; combatLog.push("Sentinel Defends!"); }
 
-    // 4. APPLY DAMAGE Logic
     let finalDmg = dmg;
-
-    // Shield Logic
     if (target.shield > 0) {
-        if (target.shield >= finalDmg) {
-            target.shield -= finalDmg;
-            finalDmg = 0;
-            combatLog.push(`${combatEnemy.name} used ${moveName}. Blocked by Shield!`);
-        } else {
-            finalDmg -= target.shield;
-            target.shield = 0;
-        }
+        if (target.shield >= finalDmg) { target.shield -= finalDmg; finalDmg = 0; combatLog.push("Blocked by Shield!"); }
+        else { finalDmg -= target.shield; target.shield = 0; }
     }
-
-    // Sentinel Reflect Logic
     if (target.isDefending && finalDmg > 0) {
         let reflected = Math.floor(finalDmg * 0.5);
-        finalDmg = Math.floor(finalDmg * 0.5); // Take half
-        combatEnemy.hp -= reflected; // Reflect half
-        combatLog.push(`Sentinel REFLECTED ${reflected} damage back!`);
-        target.isDefending = false; // Reset stance
+        finalDmg = Math.floor(finalDmg * 0.5);
+        combatEnemy.hp -= reflected;
+        combatLog.push(`Reflected ${reflected} dmg!`);
+        target.isDefending = false;
     }
 
     if (finalDmg > 0) {
         target.hp -= finalDmg;
-        combatLog.push(`${combatEnemy.name} used ${moveName} on P${players.indexOf(target)+1} for ${finalDmg} dmg.`);
+        combatLog.push(`${combatEnemy.name} uses ${move} on P${players.indexOf(target)+1} for ${finalDmg} dmg.`);
     }
 
-    // 5. Player Death Check
-    if (target.hp <= 0) {
-        target.hp = 0;
-        combatLog.push(`Player ${players.indexOf(target)+1} is down!`);
-    }
-
-    // 6. Check if Enemy killed themselves via Reflection
-    if (combatEnemy.hp <= 0) {
-        combatEnemy.hp = 0;
-        combatPhase = "victory";
-        combatLog.push(`${combatEnemy.name} defeated by Reflection!`);
-        return;
-    }
+    if (combatEnemy.hp <= 0) { 
+        endPlayerTurn(players[currentTurn], "Reflect");
+        return; 
+    } 
 
     passTurnToPlayer();
 }
 
-// [NEW] Turn Passing with Death Check
 function passTurnToPlayer() {
-    // 1. Check Game Over (Both players dead)
     if (players[0].hp <= 0 && players[1].hp <= 0) {
         combatPhase = "game_over";
-        combatLog.push("MISSION FAILED. All units lost.");
         return;
     }
-
-    // 2. Try to swap to the other player
-    let nextPlayerIndex = 1 - currentTurn;
-
-    // 3. If the other player is DOWN, skip them!
-    if (players[nextPlayerIndex].hp <= 0) {
-        combatLog.push(`Player ${nextPlayerIndex + 1} is DOWN! Player ${currentTurn + 1} acts again!`);
-        // We do NOT change currentTurn, so the survivor keeps playing.
+    let next = 1 - currentTurn;
+    if (players[next].hp <= 0) {
+        combatLog.push(`Player ${next+1} is Down! P${currentTurn+1} acts again.`);
     } else {
-        // If they are alive, swap as normal
-        currentTurn = nextPlayerIndex;
+        currentTurn = next;
     }
-
-    // 4. Regain SP for the active player
-    let p = players[currentTurn];
-    p.sp = Math.min(p.sp + 2, p.maxSp);
-    
+    players[currentTurn].sp = Math.min(players[currentTurn].sp + 2, players[currentTurn].maxSp);
     combatPhase = "player_turn";
 }
 
-
-// --- Input Handling ---
+// --- Input ---
 
 canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    handleClicks(mouseX, mouseY);
+    handleClicks(e.clientX - rect.left, e.clientY - rect.top);
 });
 
 function isInside(x, y, btn) {
     return x > btn.x && x < btn.x + btn.w && y > btn.y && y < btn.y + btn.h;
 }
 
-// Button Layout
 const BTN = {
     START: {x: 350, y: 250, w: 300, h: 60},
     HELP: {x: 350, y: 330, w: 300, h: 60},
@@ -697,49 +442,37 @@ const BTN = {
     CLASS_1: {x: 50, y: 150, w: 280, h: 500},
     CLASS_2: {x: 360, y: 150, w: 280, h: 500},
     CLASS_3: {x: 670, y: 150, w: 280, h: 500},
-    
-    // Board Buttons
     ROLL: {x: 400, y: 660, w: 200, h: 60}, 
-    
-    // Combat Buttons (4 Skills)
     SKILL_1: {x: 50, y: 650, w: 200, h: 50},
     SKILL_2: {x: 280, y: 650, w: 200, h: 50},
     SKILL_3: {x: 510, y: 650, w: 200, h: 50},
     SKILL_4: {x: 740, y: 650, w: 200, h: 50},
-    COMBAT_END: {x: 350, y: 600, w: 300, h: 60} // For Victory/Rest
+    COMBAT_END: {x: 350, y: 600, w: 300, h: 60},
+    RISK_YES: {x: 300, y: 400, w: 150, h: 50},
+    RISK_NO: {x: 550, y: 400, w: 150, h: 50}
 };
 
 function handleClicks(x, y) {
-    
-    // --- Main Menu ---
     if (gameState === "main_menu") {
         if (isInside(x, y, BTN.START)) {
             gameState = "class_select";
-            p1Class = null; p2Class = null; 
-            partyPosition = 0; currentTurn = 0;
+            p1Class = null; p2Class = null; partyPosition = 0; currentTurn = 0;
+            shortcutActive = null; isShortcutFight = false;
             gameLog = ["Game Start! Roll Dice."];
-            // Reset Players
-            players.forEach(p => { p.hp = p.maxHp; p.sp = 5; p.shield = 0; p.class = ""; p.lastMove = null; p.concussiveStreak = 0; isCharging = false; atkBuff = 0; isDefending = false; items = {};});
+            players.forEach(p => { p.hp = p.maxHp; p.sp = 5; p.shield = 0; p.class = ""; p.lastMove = null; p.concussiveStreak = 0; p.isCharging = false; p.atkBuff = 0; p.isDefending = false; p.items = {};});
             return;
         }
-        else if (isInside(x, y, BTN.HELP)) 
-        { gameState = "help";
-         helpPageIndex = 0;
-        return; }
+        else if (isInside(x, y, BTN.HELP)) { gameState = "help"; helpPageIndex = 0; return; }
     }
     else if (["help", "settings", "about", "class_select"].includes(gameState)) {
-        if (isInside(x, y, BTN.BACK)) {
-             gameState = "main_menu"; 
-             return; }
+        if (isInside(x, y, BTN.BACK)) { gameState = "main_menu"; return; }
     }
 
-    // --- Help ---
     if (gameState === "help") {
         if (isInside(x, y, BTN.NEXT) && helpPageIndex < HELP_PAGES.length - 1) helpPageIndex++;
         else if (isInside(x, y, BTN.PREV) && helpPageIndex > 0) helpPageIndex--;
     }
 
-    // --- Class Select ---
     else if (gameState === "class_select") {
         let selected = null;
         if (isInside(x, y, BTN.CLASS_1)) selected = "Assault";
@@ -755,48 +488,58 @@ function handleClicks(x, y) {
         }
     }
 
-    // --- Game Board ---
     else if (gameState === "game_board") {
+        // [NEW] Shortcut Logic - FIXED BRACKETS
+        if (shortcutActive !== null) {
+            if (isInside(x, y, BTN.RISK_YES)) {
+                gameState = "combat";
+                let s = SHORTCUTS[shortcutActive];
+                combatEnemy = { ...ENEMIES.find(e => e.name === s.enemy) };
+                combatEnemy.maxHp += 50; combatEnemy.hp = combatEnemy.maxHp; combatEnemy.atk += 5;
+                isShortcutFight = true;
+                combatPhase = "player_turn";
+                combatLog = [`Guardian of ${s.name}!`, "Defeat to enter!"];
+                players[currentTurn].sp = Math.min(players[currentTurn].sp + 2, players[currentTurn].maxSp);
+            }
+            else if (isInside(x, y, BTN.RISK_NO)) {
+                shortcutActive = null;
+                gameLog.push("Shortcut declined.");
+            }
+            return; // Exit here so we don't process the roll button below
+        }
+
+        // Normal Roll Logic
         if (isInside(x, y, BTN.ROLL)) {
             let roll = Math.floor(Math.random() * 6) + 1;
             dieRollResult = roll;
-            
             let newPos = partyPosition + roll;
             if (newPos > 67) newPos = 67;
-            
             partyPosition = newPos;
-            gameLog.push(`Squad moved to Tile ${newPos+1}.`);
             
-            // Start Combat
+            if (SHORTCUTS[newPos]) {
+                shortcutActive = newPos;
+                gameLog.push(`Found ${SHORTCUTS[newPos].name}!`);
+                return; 
+            }
+
+            gameLog.push(`Squad moved to Tile ${newPos+1}.`);
             gameState = "combat";
             startCombat(newPos);
         }
     }
 
-    // --- Combat ---
     else if (gameState === "combat") {
-        // Victory, Rest, OR Game Over
-        if (combatPhase === "victory" || combatPhase === "rest" || combatPhase === "game_over") {
+        if (combatPhase === "victory" || combatPhase === "rest" || combatPhase === "safe") {
             if (isInside(x, y, BTN.COMBAT_END)) {
-                if (combatPhase === "game_over") {
-                    // If Game Over, go back to Main Menu
-                    gameState = "main_menu";
-                } else {
-                    // If Victory/Rest, continue on board
-                    gameState = "game_board";
-                }
-                return;
+                gameState = "game_board"; return;
             }
         }
-
-        // --- NEW: Loot Phase ---
-        else if (combatPhase === "loot_roll") {
-             if (isInside(x, y, BTN.COMBAT_END)) { // Re-using the big button for rolling
-                 processLoot();
-             }
+        else if (combatPhase === "game_over") {
+             if (isInside(x, y, BTN.COMBAT_END)) { gameState = "main_menu"; return; }
         }
-
-        // Active Battle State
+        else if (combatPhase === "loot_roll") {
+             if (isInside(x, y, BTN.COMBAT_END)) processLoot();
+        }
         else if (combatPhase === "player_turn") {
             if (isInside(x, y, BTN.SKILL_1)) playerUseSkill(0);
             else if (isInside(x, y, BTN.SKILL_2)) playerUseSkill(1);
@@ -827,7 +570,6 @@ function drawButton(btn, text, color, subtext="") {
 }
 
 function gameLoop() {
-    // Clear
     ctx.fillStyle = COLORS.BLACK;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -862,35 +604,65 @@ function gameLoop() {
         drawCard(BTN.CLASS_3, "Specialist", COLORS.SPECIALIST, p1Class === "Specialist");
     }
     else if (gameState === "game_board") {
-        // Draw Board
+        // Draw Tiles
         boardTiles.forEach((t, i) => {
-            let color = ((i+1) % 11 === 0 && i !== 0) ? COLORS.BLUE : COLORS.RED;
+            let color = COLORS.RED;
+            if (t.type === "blue") color = COLORS.BLUE;
+            else if (t.type === "green") color = COLORS.SAFE_GREEN;
+            else if (t.type === "gold") color = COLORS.GOLD;
             drawRect(t, color);
             drawText(i+1, t.x + t.w/2, t.y + t.h/2 + 5, 10, COLORS.WHITE);
+
+            // Draw Shortcut Lines
+            if (SHORTCUTS[i]) {
+                let targetIdx = SHORTCUTS[i].target;
+                let targetTile = boardTiles[targetIdx];
+                ctx.beginPath();
+                ctx.moveTo(t.x + 16, t.y + 16);
+                ctx.lineTo(targetTile.x + 16, targetTile.y + 16);
+                ctx.strokeStyle = COLORS.GOLD;
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
         });
 
-        // Draw Squad
         let squad = boardTiles[partyPosition];
         ctx.beginPath(); ctx.arc(squad.x+16, squad.y+16, 12, 0, 2*Math.PI); 
         ctx.fillStyle = COLORS.SQUAD_COLOR; ctx.fill();
 
-        // UI Bar
         ctx.fillStyle = COLORS.DARK_GRAY;
         ctx.fillRect(0, 630, 1000, 120); 
         drawText(`Player ${currentTurn + 1}'s Turn`, 150, 670, 30, COLORS.ALIEN_GREEN);
         drawButton(BTN.ROLL, "Roll Die", COLORS.ALIEN_GREEN);
-        // Log
+        
         ctx.textAlign = "left"; ctx.fillStyle = COLORS.WHITE; ctx.font = "14px Arial";
         gameLog.slice(-4).forEach((l, i) => ctx.fillText(l, 650, 660 + (i*20)));
+
+        // [NEW] Shortcut Popup
+        if (shortcutActive !== null) {
+             ctx.fillStyle = "rgba(0,0,0,0.9)";
+             ctx.fillRect(150, 200, 700, 300);
+             ctx.strokeStyle = COLORS.GOLD;
+             ctx.strokeRect(150, 200, 700, 300);
+             let s = SHORTCUTS[shortcutActive];
+             ctx.textAlign = "center";
+             drawText(`SHORTCUT: ${s.name}`, 500, 260, 40, COLORS.GOLD);
+             drawText(`Skip to Tile ${s.target}?`, 500, 320, 30, COLORS.WHITE);
+             drawText(`RISK: Defeat Buffed ${s.enemy}`, 500, 360, 24, COLORS.RED);
+             drawButton(BTN.RISK_YES, "RISK IT", COLORS.RED);
+             drawButton(BTN.RISK_NO, "DECLINE", COLORS.GRAY);
+        }
     }
     else if (gameState === "combat") {
-        // --- Combat Screen ---
-        
-        // 1. Draw Enemy
-        if (combatPhase !== "rest") {
-            drawText(combatEnemy.name, 500, 100, 40, COLORS.RED);
+        if (combatPhase === "safe") {
+            drawText("SAFE ZONE", 500, 150, 50, COLORS.SAFE_GREEN);
+        } else if (combatPhase !== "rest") {
+            let name = combatEnemy.name;
+            if (isShortcutFight) name = "Guardian " + name;
+            drawText(name, 500, 100, 40, COLORS.RED);
             drawText(`HP: ${combatEnemy.hp}/${combatEnemy.maxHp}`, 500, 150, 30, COLORS.WHITE);
-            // Enemy HP Bar
             let hpPercent = Math.max(0, combatEnemy.hp / combatEnemy.maxHp);
             ctx.fillStyle = COLORS.GRAY; ctx.fillRect(300, 170, 400, 20);
             ctx.fillStyle = COLORS.RED; ctx.fillRect(300, 170, 400 * hpPercent, 20);
@@ -898,11 +670,9 @@ function gameLoop() {
             drawText("REST POINT", 500, 150, 50, COLORS.BLUE);
         }
 
-        // 2. Draw Combat Log (Center)
         ctx.textAlign = "center"; ctx.font = "20px Arial"; ctx.fillStyle = COLORS.WHITE;
         combatLog.slice(-5).forEach((l, i) => ctx.fillText(l, 500, 300 + (i*30)));
 
-        // 3. Draw Player Stats (Left P1, Right P2)
         const drawStats = (p, x, label) => {
             let color = (label === `Player ${currentTurn+1}`) ? COLORS.ALIEN_GREEN : COLORS.WHITE;
             drawText(label + ` (${p.class})`, x, 500, 24, color);
@@ -913,30 +683,22 @@ function gameLoop() {
         drawStats(players[0], 200, "Player 1");
         drawStats(players[1], 800, "Player 2");
 
-// 4. Draw Controls
         if (combatPhase === "player_turn") {
             let p = players[currentTurn];
             let skills = SKILLS[p.class];
-            
             drawButton(BTN.SKILL_1, skills[0].name, COLORS.DARK_GRAY, `${skills[0].cost} SP`);
             drawButton(BTN.SKILL_2, skills[1].name, COLORS.DARK_GRAY, `${skills[1].cost} SP`);
             drawButton(BTN.SKILL_3, skills[2].name, COLORS.DARK_GRAY, `${skills[2].cost} SP`);
             drawButton(BTN.SKILL_4, skills[3].name, COLORS.DARK_GRAY, `${skills[3].cost} SP`);
-            
             drawText(`It is Player ${currentTurn+1}'s turn! Choose a skill.`, 500, 620, 20, COLORS.ALIEN_GREEN);
         } 
-        // --- NEW: Draw Loot Button ---
         else if (combatPhase === "loot_roll") {
             drawButton(BTN.COMBAT_END, `P${lootTurn+1}: Roll for Loot`, COLORS.ALIEN_GREEN);
         }
-        else if (combatPhase === "victory" || combatPhase === "rest") {
-            drawButton(BTN.COMBAT_END, "Continue Journey", COLORS.ALIEN_GREEN);
-        }
-        else if (combatPhase === "victory" || combatPhase === "rest") {
+        else if (combatPhase === "victory" || combatPhase === "rest" || combatPhase === "safe") {
             drawButton(BTN.COMBAT_END, "Continue Journey", COLORS.ALIEN_GREEN);
         }
         else if (combatPhase === "game_over") {
-            // New Game Over Screen
             drawText("GAME OVER", 500, 600, 50, COLORS.RED);
             drawButton(BTN.COMBAT_END, "Try Again", COLORS.RED);
         }
