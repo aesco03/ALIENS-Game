@@ -65,12 +65,12 @@ let partyPosition = 0;
 
 // Combat Stats (Persistent)
 let players = [
-    { hp: 75, maxHp: 75, sp: 5, maxSp: 10, shield: 0, class: "", 
+    { hp: 100, maxHp: 100, sp: 5, maxSp: 10, shield: 0, class: "", 
     lastMove: null, concussiveStreak: 0, isCharging: false, atkBuff: 0, isDefending: false, 
-    items: {}}, // P1
-    { hp: 75, maxHp: 75, sp: 5, maxSp: 10, shield: 0, class: "",
+    items: {}, burnLevel: 0, rageLevel: 0, reflectLevel: 0, reflectRatio: 0.5, autoRepairLevel: 0, efficiencyLevel: 0, bioticAmpLevel: 0 }, // P1
+    { hp: 100, maxHp: 100, sp: 5, maxSp: 10, shield: 0, class: "",
     lastMove: null, concussiveStreak: 0, isCharging: false, atkBuff: 0, isDefending: false,
-    items: {}}  // P2
+    items: {}, burnLevel: 0, rageLevel: 0, reflectLevel: 0, reflectRatio: 0.5, autoRepairLevel: 0, efficiencyLevel: 0, bioticAmpLevel: 0 }  // P2
 ];
 
 // Game Board Logic
@@ -118,9 +118,9 @@ const SKILLS = {
     ],
     "Specialist": [
         { name: "Debuff", cost: 1, dmg: 10, desc: "Reduce Enemy Atk" },
-        { name: "Buff", cost: 1, dmg: 0, desc: "Ally Atk Up" },
-        { name: "Freeze", cost: 1, dmg: 0, desc: "Stun Enemy" },
-        { name: "Heal", cost: 1, dmg: 0, desc: "Heal Ally 15 HP" }
+        { name: "Buff", cost: 3, dmg: 0, desc: "Ally Atk Up + Heal Ally by 10" },
+        { name: "Freeze", cost: 2, dmg: 0, desc: "Stun Enemy" },
+        { name: "Heal", cost: 5, dmg: 0, desc: "Heal Both Ally 15 HP" }
     ]
 };
 
@@ -148,15 +148,119 @@ const CLASS_ITEMS = {
 let lootTurn = 0;
 
 const HELP_PAGES = [
-    ["--- AGHHH ALIENS! ---", "", "Rules: Cooperative RPG.", "Use your class skills to defeat aliens.", "Manage your HP and SP carefully."],
-    ["--- Classes ---", "Assault: Damage Dealer", "Sentinel: Tank/Shields", "Specialist: Healer/Buffer"],
-    ["--- Board ---", "Red: Combat", "Green: Safe Zone", "Blue: Rest (Heal)", "Gold: Shortcut (Risk Boss Fight)"]
+    // Page 1: Title & Abstract
+    [
+        "--- AGHHH ALIENS! ---",
+        "",
+        "Abstract:",
+        "Two space cadets had their spaceship invaded by aliens.",
+        "Their goal is to get to the opposite end of their ship",
+        "where the alien queen resides so they can gain control",
+        "of the ship again.",
+        "",
+        "Players: Two-Player cooperative game",
+    ],
+    // Page 2: Core Rules
+    [
+        "--- Core Rules ---",
+        "",
+        "Roll a six-sided die to move across a board of 68 tiles.",
+        "Every time a die is rolled, an enemy encounter begins.",
+        "A random enemy card is chosen, and players must fight.",
+        "",
+        "After an enemy is defeated, each player rolls a die for an item:",
+        "  1-3: No item",
+        "  4-6: Get item",
+        "",
+        "Reach the 68th tile for the final encounter with the Alien Queen.",
+        "Defeat her to win the game.",
+    ],
+    // Page 3: Player Resources
+    [
+        "--- Player Resources ---",
+        "",
+        "Health Points (HP): 75 Total (Red Tokens)",
+        "  When it runs out, the player dies.",
+        "",
+        "Armor Points (AP): (Blue Tokens)",
+        "  Additional health given by abilities.",
+        "",
+        "Skill Points (SP): Start with 5, Max 10.",
+        "  Attacks cost SP. Regain 2 SP at the start of your turn.",
+    ],
+    // Page 4: Rest Points & Alien Resources
+    [
+        "--- Rest & Aliens ---",
+        "",
+        "Rest Points:",
+        "  Every 11 tiles. Both players regain all health.",
+        "  Revives a downed teammate with 50% health.",
+        "  Every 2 rests, aliens get 50% more health.",
+        "",
+        "Alien Resources:",
+        "  Health Points (HP): When it runs out, the alien dies.",
+        "  Enemy Moves (Dice Roll):",
+        "    1-3: Basic Attack",
+        "    4-5: Heavy Attack",
+        "    6: Special Attack",
+        "  (Another roll determines which player is attacked)",
+    ],
+    // Page 5: Class - Assault
+    [
+        "--- Class: Assault (Damage) ---",
+        "",
+        "Strike (1 SP): Deal 20 damage.",
+        "Barbaric Slash (2 SP): Take 10 damage, Deal 30 damage.",
+        "Concussive Strike (3 SP): Deal 7 damage. +3 damage",
+        "  if used consecutively. Stuns after 9 damage increase.",
+        "Charged Punch (6 SP): Skips turn. Next cast deals 50 damage.",
+    ],
+    // Page 6: Class - Sentinel
+    [
+        "--- Class: Sentinel (Defense) ---",
+        "",
+        "Defend (1 SP): Absorb teammate's damage, reflect 50%.",
+        "Shield (2 SP): Gain 25 shield.",
+        "Cover (3 SP): Give 10 shield to the team.",
+        "Slam (5 SP): Removes all shield, deals 45 damage,",
+        "  and removes stun from all enemies.",
+    ],
+    // Page 7: Class - Specialist
+    [
+        "--- Class: Specialist (Support) ---",
+        "",
+        "Debuff (1 SP): Deal 10 damage, reduce enemy attack by 10.",
+        "Buff (3 SP): Increase ally attack by 20 and heal by 10.",
+        "Freeze (1 SP): Stun an enemy for 1 turn.",
+        "Heal (5 SP): Heal both players by 35 HP.",
+    ],
+    // Page 8: Alien Types
+    [
+        "--- Alien Types (Base HP) ---",
+        "",
+        "Goliath (120 HP):",
+        "  Basic: -10, Heavy: -25, Special: -45 Fire Breath",
+        "Kraken (100 HP):",
+        "  Basic: -10, Heavy: -25, Special: -45 Lightning Strike",
+        "Wraith (90 HP):",
+        "  Basic: -10, Heavy: -25, Special: -45 Teleport Abduct",
+        "Xenomorph (80 HP):",
+        "  Basic: -10, Heavy: -25, Special: -45 Acid Bleed",
+        "Alien Queen (200 HP):",
+        "  Basic: -20, Heavy: -35, Special: -60 Group Attack",
+        "  (Summons Xenomorph after 3 attacks)",
+    ],
+    // Page 9: Items
+    [
+        "--- Items (Level up on duplicate) ---",
+        "",
+    ]
 ];
-
 const CLASS_INFO = {
     "Assault": ["Damage Dealer", "Strike (1SP)", "Slash (2SP)", "Concussive (3SP)", "Charged (6SP)"],
     "Sentinel": ["Tank", "Defend (1SP)", "Shield (2SP)", "Cover (3SP)", "Slam (5SP)"],
-    "Specialist": ["Support", "Debuff (1SP)", "Buff (1SP)", "Freeze (1SP)", "Heal (1SP)"]
+    "Specialist": ["Support", "Debuff (1SP): Reduce enemy atk", "Buff (3SP): Increase ally's atk + heal", "Freeze (1SP): Stun enemy", "Heal (5SP): Restore both players HP"]
+
 };
 
 // --- Initialization ---
@@ -244,6 +348,10 @@ function playerUseSkill(skillIndex) {
     let skill = SKILLS[p.class][skillIndex];
 
     let actualCost = skill.cost;
+    // Efficiency Core: reduce SP cost
+    if (p.efficiencyLevel > 0) {
+        actualCost = Math.max(1, skill.cost - p.efficiencyLevel);
+    }
     if (p.isCharging && skill.name === "Charged") actualCost = 0;
 
     if (p.sp < actualCost) { combatLog.push("Not enough SP!"); return; }
@@ -255,13 +363,13 @@ function playerUseSkill(skillIndex) {
     let selfDmg = 0;
 
     if (skill.name === "Strike") dmg = 20;
-    else if (skill.name === "Slash") { selfDmg = 10; dmg = 30; }
+    else if (skill.name === "Slash") { selfDmg = 15; dmg = 3; }
     else if (skill.name === "Concussive") {
         if (p.lastMove === "Concussive") p.concussiveStreak++; else p.concussiveStreak = 0;
-        let bonus = p.concussiveStreak * 3;
-        dmg = 7 + bonus;
+        let bonus = p.concussiveStreak * 5;
+        dmg = 15 + bonus;
         combatLog.push(`Streak: ${p.concussiveStreak} (+${bonus})`);
-        if (bonus >= 9) { combatEnemy.isStunned = true; combatLog.push("Enemy Stunned!"); p.concussiveStreak = 0; }
+        if (bonus >= 15) { combatEnemy.isStunned = true; combatLog.push("Enemy Stunned!"); p.concussiveStreak = 0; }
     }
     else if (skill.name === "Charged") {
         if (!p.isCharging) {
@@ -269,18 +377,23 @@ function playerUseSkill(skillIndex) {
             combatLog.push("Charging... (Turn Skipped)");
             endPlayerTurn(p, skill.name); return;
         } else {
-            dmg = 50; p.isCharging = false;
+            dmg = 60; p.isCharging = false;
             combatLog.push("UNLEASHED CHARGED PUNCH!");
         }
     }
     else if (skill.name === "Defend") { p.isDefending = true; combatLog.push("Reflecting next attack."); }
-    else if (skill.name === "Shield") { p.shield += 25; combatLog.push("Gained 25 Shield."); }
-    else if (skill.name === "Cover") { p.shield += 10; ally.shield += 10; combatLog.push("Shielded Team."); }
-    else if (skill.name === "Slam") { p.shield = 0; dmg = 45; combatLog.push("Slammed!"); }
+    else if (skill.name === "Shield") { p.shield += 35; combatLog.push("Gained 25 Shield."); }
+    else if (skill.name === "Cover") { p.shield += 15; ally.shield += 20; combatLog.push("Shielded Team."); }
+    else if (skill.name === "Slam") { p.shield = 0; dmg = 60; combatLog.push("Shields converted to SLAM!"); }
     else if (skill.name === "Debuff") { dmg = 10; combatEnemy.atkDebuff = (combatEnemy.atkDebuff || 0) + 10; combatLog.push("Enemy Atk reduced!"); }
-    else if (skill.name === "Buff") { ally.atkBuff += 15; combatLog.push("Ally Attack Up!"); }
+    else if (skill.name === "Buff") { ally.atkBuff += 20; ally.hp = Math.min(ally.hp + 10, ally.maxHp); combatLog.push(`Buff applied! Ally attack +20 and healed for 10 HP.`); }
     else if (skill.name === "Freeze") { combatEnemy.isStunned = true; combatLog.push("Enemy Frozen!"); }
-    else if (skill.name === "Heal") { ally.hp = Math.min(ally.hp + 15, ally.maxHp); combatLog.push("Healed Ally."); }
+    else if (skill.name === "Heal") {     
+        // Heal both players by 35 HP
+    players.forEach(pl => {
+        pl.hp = Math.min(pl.hp + 35, pl.maxHp);
+    });
+    combatLog.push("Both players healed for 35 HP!"); }
 
     if (selfDmg > 0) { p.hp -= selfDmg; combatLog.push(`Recoil: ${selfDmg} dmg.`); }
     if (dmg > 0) {
@@ -290,7 +403,38 @@ function playerUseSkill(skillIndex) {
         combatLog.push(`Dealt ${dmg} damage.`);
         if (p.atkBuff > 0) p.atkBuff = 0; 
     }
-
+    // --- NEW: CLASS SPECIFIC EFFECTS ---
+    // Assault: Burn effect for high cost attacks
+    if (p.burnLevel > 0 && skill.cost >= 5) {
+        let burnDmg = p.burnLevel * 5;
+        combatEnemy.hp -= burnDmg;
+        combatLog.push(`Burn effect! Dealt ${burnDmg} burn damage.`);
+    }
+    // Assault: Rage effect
+    if (p.rageLevel > 0 && p.hp < p.maxHp * 0.3) {
+        dmg *= 2;
+        combatLog.push("Berserker Drive! Double damage due to low HP.");
+    }
+    // Sentinel: Auto-Repair
+    if (p.autoRepairLevel > 0) {
+        p.shield += p.autoRepairLevel * 5;
+        combatLog.push(`Auto-Repair: Regained ${p.autoRepairLevel * 5} shield.`);
+    }
+    // Specialist: Biotic Amp
+    if (p.bioticAmpLevel > 0) {
+        if (skill.name === "Heal") {
+            let amp = 1 + (0.5 + (p.bioticAmpLevel - 1) * 0.25);
+            let healAmt = Math.floor(25 * amp);
+            ally.hp = Math.min(ally.hp + healAmt, ally.maxHp);
+            combatLog.push(`Biotic Amp: Healed ally for ${healAmt} HP.`);
+        }
+        if (skill.name === "Buff") {
+            let amp = 1 + (0.5 + (p.bioticAmpLevel - 1) * 0.25);
+            let buffAmt = Math.floor(20 * amp);
+            ally.atkBuff += buffAmt;
+            combatLog.push(`Biotic Amp: Buffed ally for ${buffAmt} attack.`);
+        }
+    }
     endPlayerTurn(p, skill.name);
 }
 
@@ -317,39 +461,69 @@ function endPlayerTurn(player, skillName) {
     }
 }
 
+// ✅ Updated Loot RNG System with full item logic
 function processLoot() {
+    // 1. Roll Die (1-6)
     let roll = Math.floor(Math.random() * 6) + 1;
     let p = players[lootTurn];
     let logMsg = `Player ${lootTurn+1} rolled a ${roll}. `;
     let itemData = null;
 
+    // 2. Determine Pool based on Roll
     if (roll <= 4) {
         let idx = Math.floor(Math.random() * GENERAL_ITEMS.length);
         itemData = GENERAL_ITEMS[idx];
-        logMsg += "(General) ";
+        logMsg += "(General Loot) ";
     } else {
         let pool = CLASS_ITEMS[p.class];
         let idx = Math.floor(Math.random() * pool.length);
         itemData = pool[idx];
-        logMsg += `(${p.class}) `;
+        logMsg += `(Unique ${p.class} Loot) `;
     }
 
+    // 3. Apply Item Effects
     if (p.items[itemData.id]) {
-        p.items[itemData.id]++; 
-        logMsg += `Duplicate ${itemData.name}! Level Up!`;
-        if (itemData.id === "gen_hp") { p.maxHp += 5; p.hp += 5; }
-        if (itemData.id === "gen_sp") { p.maxSp += 1; p.sp += 1; }
+        // Level-up
+        p.items[itemData.id]++;
+        logMsg += `Duplicate ${itemData.name}! Level ${p.items[itemData.id]}!`;
+
+        switch(itemData.id) {
+            case "gen_hp": p.maxHp += 5; p.hp += 5; break;
+            case "gen_sp": p.maxSp += 1; p.sp += 1; break;
+            case "gen_atk": /* handled in damage calc */ break;
+            case "as_burn": p.burnLevel = p.items["as_burn"]; break;
+            case "as_rage": /* effect stays same */ break;
+            case "sen_ref":
+                p.reflectLevel = p.items["sen_ref"];
+                p.reflectRatio = Math.min(0.75 + 0.0625 * (p.reflectLevel - 1), 1.0);
+                break;
+            case "sen_reg": p.autoRepairLevel = p.items["sen_reg"]; break;
+            case "spec_eff": p.efficiencyLevel = p.items["spec_eff"]; break;
+            case "spec_pot": p.bioticAmpLevel = p.items["spec_pot"]; break;
+        }
     } else {
+        // First pickup
         p.items[itemData.id] = 1;
         logMsg += `Obtained ${itemData.name}!`;
-        if (itemData.id === "gen_hp") { p.maxHp += 15; p.hp += 15; }
-        if (itemData.id === "gen_sp") { p.maxSp += 2; p.sp += 2; }
+
+        switch(itemData.id) {
+            case "gen_hp": p.maxHp += 15; p.hp += 15; break;
+            case "gen_sp": p.maxSp += 2; p.sp += 2; break;
+            case "gen_atk": /* handled in damage calc */ break;
+            case "as_burn": p.burnLevel = 1; break;
+            case "as_rage": /* effect stays same */ break;
+            case "sen_ref": p.reflectLevel = 1; p.reflectRatio = 0.75; break;
+            case "sen_reg": p.autoRepairLevel = 1; break;
+            case "spec_eff": p.efficiencyLevel = 1; break;
+            case "spec_pot": p.bioticAmpLevel = 1; break;
+        }
     }
-    
+
     combatLog.push(logMsg);
 
+    // 4. Advance Loot Turn
     if (lootTurn === 0) {
-        lootTurn = 1; 
+        lootTurn = 1;
         combatLog.push("Player 2, roll for loot!");
     } else {
         combatPhase = "victory";
@@ -385,8 +559,8 @@ function enemyTurn() {
         else { finalDmg -= target.shield; target.shield = 0; }
     }
     if (target.isDefending && finalDmg > 0) {
-        let reflected = Math.floor(finalDmg * 0.5);
-        finalDmg = Math.floor(finalDmg * 0.5);
+        let reflected = Math.floor(finalDmg * (target.reflectRatio || 0.5));
+        finalDmg = Math.floor(finalDmg * (1 - (target.reflectRatio || 0.5)));
         combatEnemy.hp -= reflected;
         combatLog.push(`Reflected ${reflected} dmg!`);
         target.isDefending = false;
@@ -656,6 +830,7 @@ function gameLoop() {
         }
     }
     else if (gameState === "combat") {
+        // --- Combat Screen ---
         if (combatPhase === "safe") {
             drawText("SAFE ZONE", 500, 150, 50, COLORS.SAFE_GREEN);
         } else if (combatPhase !== "rest") {
@@ -672,17 +847,53 @@ function gameLoop() {
 
         ctx.textAlign = "center"; ctx.font = "20px Arial"; ctx.fillStyle = COLORS.WHITE;
         combatLog.slice(-5).forEach((l, i) => ctx.fillText(l, 500, 300 + (i*30)));
+// ✅ Helper Function for item names
+function getItemName(id) {
+    const allItems = [
+        ...GENERAL_ITEMS,
+        ...CLASS_ITEMS["Assault"],
+        ...CLASS_ITEMS["Sentinel"],
+        ...CLASS_ITEMS["Specialist"]
+    ];
+    let found = allItems.find(item => item.id === id);
+    return found ? found.name : id;
+}
 
+        // ✅ Updated drawStats with item display and font reset
         const drawStats = (p, x, label) => {
+            // Player header
             let color = (label === `Player ${currentTurn+1}`) ? COLORS.ALIEN_GREEN : COLORS.WHITE;
             drawText(label + ` (${p.class})`, x, 500, 24, color);
+            // Stats
             drawText(`HP: ${p.hp}/${p.maxHp}`, x, 530, 20, COLORS.HP_BAR);
             drawText(`SP: ${p.sp}/${p.maxSp}`, x, 560, 20, COLORS.SP_BAR);
-            if(p.shield > 0) drawText(`Shield: ${p.shield}`, x, 590, 20, COLORS.BLUE);
+            if (p.shield > 0) drawText(`Shield: ${p.shield}`, x, 590, 20, COLORS.BLUE);
+
+            // ✅ NEW: Display items just below stats
+            let itemY = 610; // closer to stats
+            ctx.textAlign = "center";
+            ctx.font = "14px Arial";
+            ctx.fillStyle = COLORS.WHITE;
+
+            let itemKeys = Object.keys(p.items);
+            if (itemKeys.length > 0) {
+                itemKeys.forEach((id, i) => {
+                    let level = p.items[id];
+                    let itemName = getItemName(id);
+                    drawText(`${itemName} (Lv${level})`, x, itemY + (i * 18), 14, COLORS.WHITE);
+                });
+            } else {
+                drawText("No Items", x, itemY, 14, COLORS.GRAY);
+            }
+
+            // ✅ Restore font and alignment for other UI elements
+            ctx.font = "20px Arial";
+            ctx.textAlign = "center";
         };
         drawStats(players[0], 200, "Player 1");
         drawStats(players[1], 800, "Player 2");
 
+        // Draw Controls
         if (combatPhase === "player_turn") {
             let p = players[currentTurn];
             let skills = SKILLS[p.class];
