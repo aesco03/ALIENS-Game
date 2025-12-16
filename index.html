@@ -106,7 +106,7 @@ let isShortcutFight = false;
 const SKILLS = {
     "Assault": [
         { name: "Strike", cost: 1, dmg: 20, desc: "Deal 20 Dmg" },
-        { name: "Slash", cost: 2, dmg: 30, desc: "Self 10 Dmg, Deal 30" },
+        { name: "Slash", cost: 2, dmg: 30, desc: "Self 10 Dmg, Deal 35" },
         { name: "Concussive", cost: 3, dmg: 7, desc: "Stun Dmg" },
         { name: "Charged", cost: 6, dmg: 50, desc: "Massive Dmg" }
     ],
@@ -210,7 +210,7 @@ const HELP_PAGES = [
         "--- Class: Assault (Damage) ---",
         "",
         "Strike (1 SP): Deal 20 damage.",
-        "Barbaric Slash (2 SP): Take 10 damage, Deal 30 damage.",
+        "Barbaric Slash (2 SP): Take 10 damage, Deal 35 damage.",
         "Concussive Strike (3 SP): Deal 7 damage. +3 damage",
         "  if used consecutively. Stuns after 9 damage increase.",
         "Charged Punch (6 SP): Skips turn. Next cast deals 50 damage.",
@@ -363,7 +363,7 @@ function playerUseSkill(skillIndex) {
     let selfDmg = 0;
 
     if (skill.name === "Strike") dmg = 20;
-    else if (skill.name === "Slash") { selfDmg = 15; dmg = 3; }
+    else if (skill.name === "Slash") { selfDmg = 15; dmg = 35; }
     else if (skill.name === "Concussive") {
         if (p.lastMove === "Concussive") p.concussiveStreak++; else p.concussiveStreak = 0;
         let bonus = p.concussiveStreak * 5;
