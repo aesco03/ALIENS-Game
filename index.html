@@ -133,7 +133,7 @@ const GENERAL_ITEMS = [
 
 const CLASS_ITEMS = {
     "Assault": [
-        { id: "as_burn", name: "Incendiary Module", desc: "High cost attacks apply Burn" },
+        { id: "as_burn", name: "Incendiary Module", desc: "Attacks apply Burn" },
         { id: "as_rage", name: "Berserker Drive", desc: "Deal double damage if HP < 30%" }
     ],
     "Sentinel": [
@@ -405,7 +405,7 @@ function playerUseSkill(skillIndex) {
     }
     // --- NEW: CLASS SPECIFIC EFFECTS ---
     // Assault: Burn effect for high cost attacks
-    if (p.burnLevel > 0 && skill.cost >= 5) {
+    if (p.burnLevel > 0 && skill.cost >= 1) {
         let burnDmg = p.burnLevel * 5;
         combatEnemy.hp -= burnDmg;
         combatLog.push(`Burn effect! Dealt ${burnDmg} burn damage.`);
